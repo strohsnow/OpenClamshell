@@ -25,15 +25,16 @@ Normally, to use a MacBook in "clamshell mode" with external monitors, you need 
     This will compile the Swift code and create an executable named `OpenClamshell`.
 
 3.  **Install the service:**
-    To have `OpenClamshell` run automatically at login, install it as a `launchd` service:
     ```sh
     ./OpenClamshell --install
     ```
     This will copy the `OpenClamshell` executable to `/usr/local/bin` and set up the `launchd` service.
 
     > **Note:**
-    > You may need to run the install command with `sudo` if you get a permissions error:
-    > `sudo ./OpenClamshell --install`
+    > You may need to run the install command with `sudo` if you get a permission error:
+    > ```
+    > sudo ./OpenClamshell --install
+    > ```
 
 ## Usage
 
