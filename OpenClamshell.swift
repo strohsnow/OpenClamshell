@@ -3,7 +3,7 @@ import CoreGraphics
 import Darwin
 
 class OpenClamshell {
-  private static let fallbackBrightness: Float = 0.8
+  private static let fallbackBrightness: Float = 0.5
   private var savedBrightness: Float = OpenClamshell.fallbackBrightness
   private var isDimmed = false
 
@@ -36,7 +36,8 @@ class OpenClamshell {
     let hasExternal = displayInfo.external != nil
 
     if hasExternal, !isDimmed {
-      savedBrightness = getBrightness(for: builtinID) ?? Self.fallbackBrightness
+      let currentBrightness = getBrightness(for: builtinID) ?? Self.fallbackBrightness
+      savedBrightness = currentBrightness > 0 ? currentBrightness : Self.fallbackBrightness
       configureDisplay(dim: true, mirror: true, using: displayInfo)
     } else if !hasExternal, isDimmed {
       configureDisplay(dim: false, mirror: false, using: displayInfo)
