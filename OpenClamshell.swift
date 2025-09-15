@@ -13,14 +13,6 @@ class OpenClamshell {
   }
 
   init() {
-    let displayInfo = getDisplayInfo()
-    if let builtinID = displayInfo.builtin,
-      displayInfo.external != nil,
-      getBrightness(for: builtinID) == 0
-    {
-      isDimmed = true
-    }
-
     handleDisplays()
     NotificationCenter.default.addObserver(
       forName: NSApplication.didChangeScreenParametersNotification,
@@ -31,6 +23,13 @@ class OpenClamshell {
     }
   }
 
+  deinit {
+    if isDimmed {
+      let displayInfo = getDisplayInfo()
+      configureDisplay(dim: false, mirror: false, using: displayInfo)
+    }
+  }
+
   private func handleDisplays() {
     let displayInfo = getDisplayInfo()
     guard let builtinID = displayInfo.builtin else { return }
@@ -38,13 +37,18 @@ class OpenClamshell {
 
     if hasExternal, !isDimmed {
       savedBrightness = getBrightness(for: builtinID) ?? Self.fallbackBrightness
-      setBrightness(for: builtinID, value: 0)
-      configureMirroring(using: displayInfo)
-      isDimmed = true
+      configureDisplay(dim: true, mirror: true, using: displayInfo)
     } else if !hasExternal, isDimmed {
-      setBrightness(for: builtinID, value: savedBrightness)
-      isDimmed = false
+      configureDisplay(dim: false, mirror: false, using: displayInfo)
     }
+  }
+
+  private func configureDisplay(dim: Bool, mirror: Bool, using displayInfo: DisplayInfo) {
+    guard let builtinID = displayInfo.builtin else { return }
+    let brightness = dim ? 0 : savedBrightness
+    setBrightness(for: builtinID, value: brightness)
+    configureMirroring(enabled: mirror, using: displayInfo)
+    isDimmed = dim
   }
 
   private func getDisplayInfo() -> DisplayInfo {
@@ -64,14 +68,14 @@ class OpenClamshell {
     return DisplayInfo(builtin: builtin, external: external)
   }
 
-  private func configureMirroring(using displayInfo: DisplayInfo) {
-    guard let builtinID = displayInfo.builtin, let externalID = displayInfo.external else { return }
+  private func configureMirroring(enabled: Bool, using displayInfo: DisplayInfo) {
+    guard let builtinID = displayInfo.builtin else { return }
+    let mirrorTarget = enabled ? displayInfo.external ?? kCGNullDirectDisplay : kCGNullDirectDisplay
 
     var config: CGDisplayConfigRef?
     guard CGBeginDisplayConfiguration(&config) == .success else { return }
 
-    CGConfigureDisplayOrigin(config, externalID, 0, 0)
-    CGConfigureDisplayMirrorOfDisplay(config, builtinID, externalID)
+    CGConfigureDisplayMirrorOfDisplay(config, builtinID, mirrorTarget)
 
     if CGCompleteDisplayConfiguration(config, .permanently) != .success {
       CGCancelDisplayConfiguration(config)
@@ -118,9 +122,22 @@ class OpenClamshell {
 
 class AppDelegate: NSObject, NSApplicationDelegate {
   private var openClamshell: OpenClamshell?
+  private var signalSources: [DispatchSourceSignal] = []
 
   func applicationDidFinishLaunching(_ aNotification: Notification) {
     openClamshell = OpenClamshell()
+
+    let signals: [Int32] = [SIGTERM, SIGINT, SIGHUP]
+    for signalCode in signals {
+      signal(signalCode, SIG_IGN)
+      let source = DispatchSource.makeSignalSource(signal: signalCode, queue: .main)
+      source.setEventHandler { [weak self] in
+        self?.openClamshell = nil
+        NSApplication.shared.terminate(self)
+      }
+      source.resume()
+      signalSources.append(source)
+    }
   }
 }
 
@@ -187,23 +204,23 @@ struct CLI {
     }
 
     let plistContent = """
-    <?xml version="1.0" encoding="UTF-8"?>
-    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-    <plist version="1.0">
-    <dict>
-        <key>Label</key>
-        <string>\(serviceName)</string>
-        <key>ProgramArguments</key>
-        <array>
-            <string>\(installPath)</string>
-        </array>
-        <key>RunAtLoad</key>
-        <true/>
-        <key>KeepAlive</key>
-        <true/>
-    </dict>
-    </plist>
-    """
+      <?xml version="1.0" encoding="UTF-8"?>
+      <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+      <plist version="1.0">
+      <dict>
+          <key>Label</key>
+          <string>\(serviceName)</string>
+          <key>ProgramArguments</key>
+          <array>
+              <string>\(installPath)</string>
+          </array>
+          <key>RunAtLoad</key>
+          <true/>
+          <key>KeepAlive</key>
+          <true/>
+      </dict>
+      </plist>
+      """
 
     do {
       try plistContent.write(to: plistPath, atomically: true, encoding: .utf8)
